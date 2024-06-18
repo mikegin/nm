@@ -18,18 +18,16 @@ typedef struct Links {
   u32 size;
 } Links;
 
-// void addName(char ** names, int size, char * name)
-// {
-//   for (int i = 0; i < size; i++)
-//   {
-//     if (strcmp(names[i], name) == 0)
-//     {
-//       return; // exit if found
-//     }
-//   }
+typedef struct TrafficLink {
+  char * source;
+  char * destination;
+  u32 demand;
+} TrafficLink;
 
-//   names[size] = name;
-// }
+typedef struct TrafficLinks {
+  TrafficLink ** values;
+  u32 size;
+} TrafficLinks;
 
 /**
  * This uses Dijakstra's shortest path algorithm
@@ -241,87 +239,6 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
   }
 }
 
-
-void _findShortestPath(Links * links, Links * path, char * node1, char * node2)
-{
-  u32 size = links->size;
-  char * avoidValues[size];
-  u32 avoidValuesSize = 0;
-  u32 totalIterations = 0;
-  bool foundLastLink = false;
-
-  char * current = node1;
-  while(true)
-  {
-    totalIterations += 1;
-    // Link * validLinks[size];
-    // u32 validLinksSize = 0;
-    char * next;
-    u32 min = INT32_MAX;
-
-    for (int i = 0; i < size; i++) // travese all links and find valid ones
-    {
-      Link * currentLink = links->values[i];
-      char * start = currentLink->start;
-      char * end = currentLink->end;
-      u32 weight = currentLink->weight;
-
-      bool currentIsStart = strcmp(start, current) == 0;
-      bool currentIsEnd = strcmp(end, current) == 0;
-
-      if (!currentIsStart && !currentIsEnd || weight > min) continue; // not a connecting link or already exists a smaller option, skip
-
-      if (strcmp(start, node2) == 0 || strcmp(end, node2) == 0)
-      {
-        foundLastLink = true;
-      }
-      else
-      {
-        // skip over links with nodes to avoid
-        bool skip = false;
-        for (int j = 0; j < avoidValuesSize; j++)
-        {
-          if(strcmp(start, avoidValues[j]) == 0 || strcmp(end, avoidValues[j]) == 0)
-          {
-            skip = true;
-            break;
-          }
-        }
-        if (skip) continue;
-      }
-
-
-      // found a link containing current node
-      // if(strcmp(start, current) == 0 || strcmp(end, current) == 0)
-      // {
-      //   validLinksSize++;
-      //   validLinks[validLinksSize - 1] = currentLink;
-      // }
-
-      path->values[totalIterations - 1] = currentLink;
-      path->size = totalIterations;
-
-      min = weight;
-
-      if(currentIsStart) next = end;
-      else if (currentIsEnd) next = start;
-
-    }
-
-    if (!next || foundLastLink) break;
-
-    avoidValues[avoidValuesSize] = &*current;
-    avoidValuesSize++;
-    current = next;
-
-  }
-  
-  if (!foundLastLink)
-  {
-    path = NULL;
-  }
-}
-
 int main(int argc, char ** args)
 {
   char * filename = (char *)"input.csv";
@@ -459,6 +376,78 @@ int main(int argc, char ** args)
       fprintf(stdout, " %s -> %s\n", first, other);
       first = other;
     }
+
+    // load traffic data
+    fprintf(stdout, "==================\n");
+    fprintf(stdout, "Loading Traffic Data: \n");
+    filename = (char *)"traffic.csv";
+    fp = fopen(filename, "rb");
+
+    TrafficLink ** trafficValues = (TrafficLink **)malloc(maxLineLength * sizeof(TrafficLink **));
+    TrafficLinks * trafficLinks = (TrafficLinks *)malloc(sizeof(trafficValues) + sizeof(u32));
+    trafficLinks->values = trafficValues;
+
+    line = 0;
+    while (fgets(buffer, maxLineLength, fp))
+    {
+      if (line != 0) // skip header
+      {
+        char * token = strtok(buffer, ",");
+        int pos = 0;
+        TrafficLink * trafficLink = (TrafficLink *)malloc(sizeof(TrafficLink));
+        trafficLinks->values[line - 1] = trafficLink;
+        while (token)
+        {
+          switch(pos) {
+            case 0: {
+              trafficLink->source = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
+              trafficLink->source[strlen(token)] = '\0';
+
+              if (trafficLink->source == NULL) {
+                fprintf(stderr, "Memory allocation failed\n");
+                return EXIT_FAILURE;
+              }
+
+              strcpy(trafficLink->source, token);
+  #ifdef DEBUG
+              printf("%s ", trafficLink->source);
+  #endif
+              break;
+            }
+            case 1: {
+              trafficLink->destination = (char *)malloc(strlen(token) + 1);
+              trafficLink->destination[strlen(token)] = '\0';
+
+              if (trafficLink->destination == NULL) {
+                fprintf(stderr, "Memory allocation failed\n");
+                return EXIT_FAILURE;
+              }
+              strcpy(trafficLink->destination, token);
+  #ifdef DEBUG
+              printf("%s ", trafficLink->destination);
+  #endif
+              break;
+            }
+            case 2: {
+              trafficLink->demand = atoi(token);
+  #ifdef DEBUG            
+              printf("%d ", trafficLink->demand);
+  #endif            
+              break;
+            }
+          }
+          token = strtok(NULL, ",");
+          pos += 1;
+        }
+  #ifdef DEBUG
+        printf("\n");
+  #endif
+      }
+
+      line += 1;
+    }
+
+    links->size = line - 1;    
   }
   else
   {

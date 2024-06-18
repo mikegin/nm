@@ -2,14 +2,15 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "build huff",
+            "label": "build nm",
             "type": "shell",
             "command": "clang++",
             "args": [
                 "-g",
                 "${workspaceFolder}/main.cpp",
                 "-o",
-                "${workspaceFolder}/huff"
+                "${workspaceFolder}/nm",
+                "-DDEBUG"
             ],
             "group": {
                 "kind": "build",

@@ -2,12 +2,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug huff",
+            "name": "Debug nm",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/huff",
+            "program": "${workspaceFolder}/nm",
             "cwd": "${workspaceFolder}",
-            "args": ["les-miserable.txt"],
+            "args": [],
             // "args": ["-d", "output.bin"],
             "stopAtEntry": false,
             "environment": [],
@@ -20,7 +20,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "build huff",
+            "preLaunchTask": "build nm",
             "miDebuggerPath": "/usr/bin/gdb"
         }
         

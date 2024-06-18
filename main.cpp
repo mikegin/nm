@@ -250,7 +250,6 @@ int main(int argc, char ** args)
   int maxLineLength = 1024;
   char buffer[maxLineLength];
 
-  int maxLineSize = 1024;
   Link ** values = (Link **)malloc(maxLineLength * sizeof(Link **));
   Links * links = (Links *)malloc(sizeof(values) + sizeof(u32));
   links->values = values;
@@ -280,6 +279,8 @@ int main(int argc, char ** args)
           case 1: {
             // Allocate memory properly for the string and check for allocation failure
             link->start = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
+            link->start[strlen(token)] = '\0';
+
             if (link->start == NULL) {
               fprintf(stderr, "Memory allocation failed\n");
               return EXIT_FAILURE;
@@ -293,6 +294,7 @@ int main(int argc, char ** args)
           case 2: {
             // Similarly allocate memory for link->end
             link->end = (char *)malloc(strlen(token) + 1);
+            link->end[strlen(token)] = '\0';
             if (link->end == NULL) {
               fprintf(stderr, "Memory allocation failed\n");
               return EXIT_FAILURE;
@@ -331,160 +333,101 @@ int main(int argc, char ** args)
 
   links->size = line - 1;
 
-  // find shortest path from node A to node F
-  // TODO: specify this via user input somehow
+  filename = (char *)"traffic.csv";
+  fp = fopen(filename, "rb");
 
-  char * node1 = (char *)"B";
-  char * node2 = (char *)"H";
+  TrafficLink ** trafficValues = (TrafficLink **)malloc(maxLineLength * sizeof(TrafficLink **));
+  TrafficLinks * trafficLinks = (TrafficLinks *)malloc(sizeof(trafficValues) + sizeof(u32));
+  trafficLinks->values = trafficValues;
 
-  bool foundNode1 = false;
-  bool foundNode2 = false;
-
-  for (int i = 0; i < links->size; i++)
+  line = 0;
+  while (fgets(buffer, maxLineLength, fp))
   {
-    if (strcmp(links->values[i]->start, node1) == 0) foundNode1 = true;
-    if (strcmp(links->values[i]->end, node1) == 0) foundNode1 = true;
-    if (strcmp(links->values[i]->start, node2) == 0) foundNode2 = true;
-    if (strcmp(links->values[i]->end, node2) == 0) foundNode2 = true;
-  }
-
-  if (!foundNode1)
-  {
-    fprintf(stderr, "No node %s found\n", node1);
-    return EXIT_FAILURE;
-  }
-
-  if (!foundNode2)
-  {
-    fprintf(stderr, "No node %s found\n", node2);
-    return EXIT_FAILURE;
-  }
-
-  //initialize path, copy size allocation of path since unknown
-  Link ** pathValues = (Link **)malloc(maxLineLength * sizeof(Link **));
-  Links * path = (Links *)malloc(sizeof(pathValues) + sizeof(u32));
-  path->values = pathValues;
-  findShortestPath(links, path, node1, node2);
-
-  if (path->size > 0)
-  {
-
-    fprintf(stdout, "Shortest path for nodes %s and %s is :\n", node1, node2);
-    char * first = node1;
-    for (int i = 0; i < path->size; i++)
+    if (line != 0) // skip header
     {
-      Link * link = path->values[i];
+      char * token = strtok(buffer, ",");
+      int pos = 0;
+      TrafficLink * trafficLink = (TrafficLink *)malloc(sizeof(TrafficLink));
+      trafficLinks->values[line - 1] = trafficLink;
+      while (token)
+      {
+        switch(pos) {
+          case 0: {
+            trafficLink->source = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
+            trafficLink->source[strlen(token)] = '\0';
+
+            if (trafficLink->source == NULL) {
+              fprintf(stderr, "Memory allocation failed\n");
+              return EXIT_FAILURE;
+            }
+
+            strcpy(trafficLink->source, token);
+#ifdef DEBUG
+            printf("%s ", trafficLink->source);
+#endif
+            break;
+          }
+          case 1: {
+            trafficLink->destination = (char *)malloc(strlen(token) + 1);
+            trafficLink->destination[strlen(token)] = '\0';
+
+            if (trafficLink->destination == NULL) {
+              fprintf(stderr, "Memory allocation failed\n");
+              return EXIT_FAILURE;
+            }
+            strcpy(trafficLink->destination, token);
+#ifdef DEBUG
+            printf("%s ", trafficLink->destination);
+#endif
+            break;
+          }
+          case 2: {
+            trafficLink->demand = atoi(token);
+#ifdef DEBUG            
+            printf("%d ", trafficLink->demand);
+#endif            
+            break;
+          }
+        }
+        token = strtok(NULL, ",");
+        pos += 1;
+      }
+#ifdef DEBUG
+      printf("\n");
+#endif
+    }
+
+    line += 1;
+  }
+
+  trafficLinks->size = line - 1;
+
+  for (int i = 0; i < trafficLinks->size; i++)
+  {
+    Link ** pathValues = (Link **)malloc(maxLineLength * sizeof(Link **));
+    Links * path = (Links *)malloc(sizeof(pathValues) + sizeof(u32));
+    path->values = pathValues;
+
+    TrafficLink * trafficLink = trafficLinks->values[i];
+    char * source = trafficLink->source;
+    char * destination = trafficLink->destination;
+    fprintf(stdout, "Determing traffic for %s -> %s\n", source, destination);
+    u32 demand = trafficLink->demand;
+
+    findShortestPath(links, path, source, destination);
+
+    char * first = source;
+    for (int j = 0; j < path->size; j++)
+    {
+      Link * link = path->values[j];
       char * other = NULL;
       if (strcmp(first, link->start) == 0) other = link->end;
       if (strcmp(first, link->end) == 0) other = link->start;
-      fprintf(stdout, " %s -> %s\n", first, other);
+      fprintf(stdout, " %s -> %s", first, other);
+      u32 capacity = link->capacity;
+      fprintf(stdout, "  load = %u/%u (%.2f%%)\n", demand, capacity, ((double)demand / (double)capacity * 100));
       first = other;
     }
-
-    // load traffic data
-    fprintf(stdout, "==================\n");
-    fprintf(stdout, "Loading Traffic Data: \n");
-    filename = (char *)"traffic.csv";
-    fp = fopen(filename, "rb");
-
-    TrafficLink ** trafficValues = (TrafficLink **)malloc(maxLineLength * sizeof(TrafficLink **));
-    TrafficLinks * trafficLinks = (TrafficLinks *)malloc(sizeof(trafficValues) + sizeof(u32));
-    trafficLinks->values = trafficValues;
-
-    line = 0;
-    while (fgets(buffer, maxLineLength, fp))
-    {
-      if (line != 0) // skip header
-      {
-        char * token = strtok(buffer, ",");
-        int pos = 0;
-        TrafficLink * trafficLink = (TrafficLink *)malloc(sizeof(TrafficLink));
-        trafficLinks->values[line - 1] = trafficLink;
-        while (token)
-        {
-          switch(pos) {
-            case 0: {
-              trafficLink->source = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
-              trafficLink->source[strlen(token)] = '\0';
-
-              if (trafficLink->source == NULL) {
-                fprintf(stderr, "Memory allocation failed\n");
-                return EXIT_FAILURE;
-              }
-
-              strcpy(trafficLink->source, token);
-  #ifdef DEBUG
-              printf("%s ", trafficLink->source);
-  #endif
-              break;
-            }
-            case 1: {
-              trafficLink->destination = (char *)malloc(strlen(token) + 1);
-              trafficLink->destination[strlen(token)] = '\0';
-
-              if (trafficLink->destination == NULL) {
-                fprintf(stderr, "Memory allocation failed\n");
-                return EXIT_FAILURE;
-              }
-              strcpy(trafficLink->destination, token);
-  #ifdef DEBUG
-              printf("%s ", trafficLink->destination);
-  #endif
-              break;
-            }
-            case 2: {
-              trafficLink->demand = atoi(token);
-  #ifdef DEBUG            
-              printf("%d ", trafficLink->demand);
-  #endif            
-              break;
-            }
-          }
-          token = strtok(NULL, ",");
-          pos += 1;
-        }
-  #ifdef DEBUG
-        printf("\n");
-  #endif
-      }
-
-      line += 1;
-    }
-
-    trafficLinks->size = line - 1;
-
-    for (int i = 0; i < trafficLinks->size; i++)
-    {
-      Link ** pathValues = (Link **)malloc(maxLineLength * sizeof(Link **));
-      Links * path = (Links *)malloc(sizeof(pathValues) + sizeof(u32));
-      path->values = pathValues;
-
-      TrafficLink * trafficLink = trafficLinks->values[i];
-      char * source = trafficLink->source;
-      char * destination = trafficLink->destination;
-      fprintf(stdout, "Determing traffic for %s -> %s\n", source, destination);
-      u32 demand = trafficLink->demand;
-
-      findShortestPath(links, path, source, destination);
-
-      first = source;
-
-      for (int j = 0; j < path->size; j++)
-      {
-        Link * link = path->values[j];
-        char * other = NULL;
-        if (strcmp(first, link->start) == 0) other = link->end;
-        if (strcmp(first, link->end) == 0) other = link->start;
-        fprintf(stdout, " %s -> %s", first, other);
-        u32 capacity = link->capacity;
-        fprintf(stdout, " w/ capacity %u/%u (%.2f%)\n", demand, capacity, ((double)demand / (double)capacity * 100));
-        first = other;
-      }
-    }
-  }
-  else
-  {
-    fprintf(stdout, "Path for nodes %s and %s not found\n", node1, node2);
   }
 
   return 0;

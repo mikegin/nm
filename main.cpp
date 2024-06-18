@@ -160,13 +160,15 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
 
     visited[currentIndex] = 1;
 
+    if (strcmp(current, node2) == 0) break;
+
 
     // pick next
-    char * next;
+    char * next = NULL;
     u32 min = INT32_MAX;
     for (int i = 0; i < nodesSize; i++)
     {
-      if (!visited[i] && weights[i] < min)
+      if (visited[i] == 0 && weights[i] < min)
       {
         min = weights[i];
         next = nodes[i];
@@ -189,7 +191,11 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
     current = next;
   }
 
-  if (current != node2) path = NULL; // path not found
+  if (strcmp(current, node2) != 0) 
+  {
+    path = NULL; // path not found
+    return;
+  }
 
   // traverse shortest paths in reverse to get shortest path
   
@@ -205,7 +211,7 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
   }
 
   u32 iterationCount = 0;
-  while (current != node1)
+  while (strcmp(current, node1) != 0)
   {
     Link * p = shortestPaths[currentIndex];
     path->values[iterationCount] = p;
@@ -229,9 +235,9 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
   // reverse backwards path
   for (int i = 0; i < iterationCount / 2; i++)
   {
-    Link * temp = path->values[i];
-    path->values[path->size - i] = temp;
-    path->values[i] = temp;
+    Link * temp = &*path->values[i];
+    path->values[i] = &*path->values[path->size - i - 1];
+    path->values[path->size - i - 1] = temp;
   }
 }
 
@@ -407,8 +413,8 @@ int main(int argc, char ** args)
   // find shortest path from node A to node F
   // TODO: specify this via user input somehow
 
-  char * node1 = (char *)"A";
-  char * node2 = (char *)"F";
+  char * node1 = (char *)"B";
+  char * node2 = (char *)"H";
 
   bool foundNode1 = false;
   bool foundNode2 = false;
@@ -443,10 +449,15 @@ int main(int argc, char ** args)
   {
 
     fprintf(stdout, "Shortest path for nodes %s and %s is :\n", node1, node2);
+    char * first = node1;
     for (int i = 0; i < path->size; i++)
     {
       Link * link = path->values[i];
-      fprintf(stdout, " %s -> %s\n", link->start, link->end);
+      char * other = NULL;
+      if (strcmp(first, link->start) == 0) other = link->end;
+      if (strcmp(first, link->end) == 0) other = link->start;
+      fprintf(stdout, " %s -> %s\n", first, other);
+      first = other;
     }
   }
   else

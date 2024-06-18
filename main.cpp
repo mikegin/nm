@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <math.h>
 
 typedef uint32_t u32;
 
@@ -100,8 +101,10 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
   while (true)
   {
 
+#ifdef DEBUG
     fprintf(stdout, "=======================\n");
     fprintf(stdout, "Node %d: %s, weight = %d\n", currentIndex, current, weights[currentIndex]);
+#endif
 
     for (int i = 0; i < links->size; i++)
     {
@@ -137,7 +140,9 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
 
       if (visited[otherIndex])
       {
+#ifdef DEBUG
         fprintf(stdout, " (visited)\n");
+#endif
         continue;
       }
       
@@ -176,9 +181,8 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
 
     if (!next) break;
 
-    fprintf(stdout, "Next: %s\n", next);
-
 #ifdef DEBUG
+    fprintf(stdout, "Next: %s\n", next);
     for (int i = 0; i < nodesSize; i++)
     {
       fprintf(stdout, " ++ Node %d: %s, weight = %lu, visited = %d\n", i, nodes[i], weights[i], visited[i]);
@@ -447,7 +451,36 @@ int main(int argc, char ** args)
       line += 1;
     }
 
-    links->size = line - 1;    
+    trafficLinks->size = line - 1;
+
+    for (int i = 0; i < trafficLinks->size; i++)
+    {
+      Link ** pathValues = (Link **)malloc(maxLineLength * sizeof(Link **));
+      Links * path = (Links *)malloc(sizeof(pathValues) + sizeof(u32));
+      path->values = pathValues;
+
+      TrafficLink * trafficLink = trafficLinks->values[i];
+      char * source = trafficLink->source;
+      char * destination = trafficLink->destination;
+      fprintf(stdout, "Determing traffic for %s -> %s\n", source, destination);
+      u32 demand = trafficLink->demand;
+
+      findShortestPath(links, path, source, destination);
+
+      first = source;
+
+      for (int j = 0; j < path->size; j++)
+      {
+        Link * link = path->values[j];
+        char * other = NULL;
+        if (strcmp(first, link->start) == 0) other = link->end;
+        if (strcmp(first, link->end) == 0) other = link->start;
+        fprintf(stdout, " %s -> %s", first, other);
+        u32 capacity = link->capacity;
+        fprintf(stdout, " w/ capacity %u/%u (%.2f%)\n", demand, capacity, ((double)demand / (double)capacity * 100));
+        first = other;
+      }
+    }
   }
   else
   {

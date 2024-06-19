@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <math.h>
+#include <unistd.h>
 
 typedef uint32_t u32;
 
@@ -330,19 +331,71 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, int m
 
 int main(int argc, char ** args)
 {
-  char * filename = (char *)"input.csv";
-  FILE * fp = fopen(filename, "rb");
+  int opt;
+  char *networkFileName = NULL;
+  char *trafficFileName = NULL;
+  char *linksToKill = NULL;
+  char *nodesToKill = NULL;
+  int simulateLinksToKill = 1;
+  int simulateNodesToKill = -1;
+
+  FILE * networkFile = NULL;
+  FILE * trafficFile = NULL;
+
+  while ((opt = getopt(argc, args, "n:t:l:k:s:m:")) != -1) {
+      switch (opt) {
+          case 'n':
+              networkFileName = optarg;
+              break;
+          case 't':
+              trafficFileName = optarg;
+              break;
+          case 'l':
+              linksToKill = optarg;
+              break;
+          case 'k':
+              nodesToKill = optarg;
+              break;
+          case 's':
+              simulateLinksToKill = atoi(optarg);
+              break;
+          case 'm':
+              simulateNodesToKill = atoi(optarg);
+              break;
+          default:
+              fprintf(stderr, "Usage: %s -n <network filename> -t <traffic filename> [-l <links to kill>] [-k <nodes to kill>] [-s <simulate n links to kill>] [-m <simulate n nodes to kill>]\n", args[0]);
+              return EXIT_FAILURE;
+      }
+  }
+
+  if (networkFileName == NULL || trafficFileName == NULL) {
+    fprintf(stderr, "Both -n and -t options are required.\n");
+    fprintf(stderr, "Usage: %s -n <network filename> -t <traffic filename> [-l <links to kill>] [-k <nodes to kill>] [-s <simulate n links to kill>] [-m <simulate n nodes to kill>]\n", args[0]);
+    return EXIT_FAILURE;
+  }
+
+  networkFile = fopen(networkFileName, "r");
+  if (networkFile == NULL) {
+      perror("Error opening network file");
+      return EXIT_FAILURE;
+  }
+
+  trafficFile = fopen(trafficFileName, "r");
+  if (trafficFile == NULL) {
+      perror("Error opening traffic file");
+      fclose(networkFile);
+      return EXIT_FAILURE;
+  }
+
   int maxLineLength = 1024;
   char buffer[maxLineLength];
 
   Link ** values = (Link **)malloc(maxLineLength * sizeof(Link **));
   Links * links = (Links *)malloc(sizeof(values) + sizeof(u32));
   links->values = values;
-  // char ** names = (char **)malloc(2 * maxLineLength * sizeof(char *)); // since 2 characters can be per line, start and end
-  // int size = 0;
 
   int line = 0;
-  while (fgets(buffer, maxLineLength, fp))
+  while (fgets(buffer, maxLineLength, networkFile))
   {
     if (line != 0) // skip header
     {
@@ -419,15 +472,12 @@ int main(int argc, char ** args)
 
   links->size = line - 1;
 
-  filename = (char *)"traffic.csv";
-  fp = fopen(filename, "rb");
-
   TrafficLink ** trafficValues = (TrafficLink **)malloc(maxLineLength * sizeof(TrafficLink **));
   TrafficLinks * trafficLinks = (TrafficLinks *)malloc(sizeof(trafficValues) + sizeof(u32));
   trafficLinks->values = trafficValues;
 
   line = 0;
-  while (fgets(buffer, maxLineLength, fp))
+  while (fgets(buffer, maxLineLength, trafficFile))
   {
     if (line != 0) // skip header
     {
@@ -532,8 +582,7 @@ int main(int argc, char ** args)
   fprintf(stdout, "------------------\n");
   fprintf(stdout, "Testing Worst Case Failure\n");
 
-  int numberOfLinksDeactivated = 1;
-  recursiveWorstCaseFailure(links, trafficLinks, maxLineLength, numberOfLinksDeactivated - 1, 0);
+  recursiveWorstCaseFailure(links, trafficLinks, maxLineLength, simulateLinksToKill - 1, 0);
 
   return 0;
 }

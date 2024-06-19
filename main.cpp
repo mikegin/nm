@@ -248,6 +248,86 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
   }
 }
 
+
+void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, int maxLineLength, int depth, u32 startingPoint)
+{
+  for (u32 i = startingPoint; i < links->size; i++)
+  {
+    // set isActive i to false
+    // if (depth > 0) recurse
+    // if (depth == 0) determine traffic
+    // set isActive i to true
+
+    Link * link = links->values[i];
+
+    link->isActive = false;
+
+    // links->values[i]->isActive = false;
+
+    // fprintf(stdout, "\n\nDeactivating link %s -> %s\n\n", link->start, link->end);
+
+    fprintf(stdout, "\nStarting point: %d, depth: %d, current link: %s -> %s\n", i, depth, link->start, link->end);
+
+    if (depth > 0) recursiveWorstCaseFailure(links, trafficLinks, maxLineLength, depth - 1, i + 1);
+
+    if (depth == 0)
+    {
+      fprintf(stdout, "\nTraffic Calculation\n");
+      for (int j = 0; j < links->size; j++) // reset load
+      {
+        links->values[j]->load = 0;
+        if (!links->values[j]->isActive)
+        {
+          fprintf(stdout, " %s -> %s is deactivated\n", links->values[j]->start, links->values[j]->end);
+        }
+      }
+
+      fprintf(stdout, "Determing traffic\n");
+      for (int i = 0; i < trafficLinks->size; i++)
+      {
+        Link ** pathValues = (Link **)malloc(maxLineLength * sizeof(Link **));
+        Links * path = (Links *)malloc(sizeof(pathValues) + sizeof(u32));
+        path->values = pathValues;
+
+        TrafficLink * trafficLink = trafficLinks->values[i];
+        char * source = trafficLink->source;
+        char * destination = trafficLink->destination;
+        fprintf(stdout, "%s -> %s\n", source, destination);
+        u32 demand = trafficLink->demand;
+
+        findShortestPath(links, path, source, destination);
+
+        char * first = source;
+        for (int j = 0; j < path->size; j++)
+        {
+          Link * link = path->values[j];
+          char * other = NULL;
+          if (strcmp(first, link->start) == 0) other = link->end;
+          if (strcmp(first, link->end) == 0) other = link->start;
+          fprintf(stdout, " %s -> %s", first, other);
+          u32 capacity = link->capacity;
+          fprintf(stdout, "  load = %u/%u (%.2f%%)\n", demand, capacity, ((double)demand / (double)capacity * 100));
+          first = other;
+
+          link->load += demand;
+        }
+
+
+        free(pathValues);
+        free(path);
+      }
+      fprintf(stdout, "Total Load:\n");
+      for (int i = 0; i < links->size; i++)
+      {
+        fprintf(stdout, "%s -> %s", links->values[i]->start, links->values[i]->end);
+        fprintf(stdout, "  load = %u/%u (%.2f%%)\n", links->values[i]->load, links->values[i]->capacity, ((double)links->values[i]->load / (double)links->values[i]->capacity) * 100);
+      }
+    }
+
+    links->values[i]->isActive = true;
+  }
+}
+
 int main(int argc, char ** args)
 {
   char * filename = (char *)"input.csv";
@@ -449,73 +529,11 @@ int main(int argc, char ** args)
   }
 
 
-  // determine worst case failure (wcf)
-  // for each link (how would you extend this to multiple link removal)
-  // reset load for all links
-  // remove it from the network
-  // go through all traffic demands
-  // find shortest path
-  // if path exists, calculate load
   fprintf(stdout, "------------------\n");
-  fprintf(stdout, "Testing Wors Case Failure\n");
-  for (int i = 0; i < links->size; i++)
-  {
+  fprintf(stdout, "Testing Worst Case Failure\n");
 
-    // reset load
-    for (int j = 0; j < links->size; j++)
-    {
-      links->values[j]->load = 0;
-    }
-
-    Link * link = links->values[i];
-    link->isActive = false;
-
-    fprintf(stdout, "\n\nDeactivating link %s -> %s\n\n", link->start, link->end);
-
-
-    for (int i = 0; i < trafficLinks->size; i++)
-    {
-      Link ** pathValues = (Link **)malloc(maxLineLength * sizeof(Link **));
-      Links * path = (Links *)malloc(sizeof(pathValues) + sizeof(u32));
-      path->values = pathValues;
-
-      TrafficLink * trafficLink = trafficLinks->values[i];
-      char * source = trafficLink->source;
-      char * destination = trafficLink->destination;
-      fprintf(stdout, "Determing traffic for %s -> %s\n", source, destination);
-      u32 demand = trafficLink->demand;
-
-      findShortestPath(links, path, source, destination);
-
-      char * first = source;
-      for (int j = 0; j < path->size; j++)
-      {
-        Link * link = path->values[j];
-        char * other = NULL;
-        if (strcmp(first, link->start) == 0) other = link->end;
-        if (strcmp(first, link->end) == 0) other = link->start;
-        fprintf(stdout, " %s -> %s", first, other);
-        u32 capacity = link->capacity;
-        fprintf(stdout, "  load = %u/%u (%.2f%%)\n", demand, capacity, ((double)demand / (double)capacity * 100));
-        first = other;
-
-        link->load += demand;
-      }
-
-
-      free(pathValues);
-      free(path);
-    }
-    fprintf(stdout, "Total Load:\n");
-    for (int i = 0; i < links->size; i++)
-    {
-      fprintf(stdout, "%s -> %s", links->values[i]->start, links->values[i]->end);
-      fprintf(stdout, "  load = %u/%u (%.2f%%)\n", links->values[i]->load, links->values[i]->capacity, ((double)links->values[i]->load / (double)links->values[i]->capacity) * 100);
-    }
-
-
-    link->isActive = true;
-  }
+  int numberOfLinksDeactivated = 1;
+  recursiveWorstCaseFailure(links, trafficLinks, maxLineLength, numberOfLinksDeactivated - 1, 0);
 
   return 0;
 }

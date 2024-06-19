@@ -250,7 +250,7 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
 }
 
 
-void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, int maxLineLength, int depth, u32 startingPoint)
+void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, u32 maxNumberOfLinks, int depth, u32 startingPoint)
 {
   for (u32 i = startingPoint; i < links->size; i++)
   {
@@ -263,13 +263,9 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, int m
 
     link->isActive = false;
 
-    // links->values[i]->isActive = false;
-
-    // fprintf(stdout, "\n\nDeactivating link %s -> %s\n\n", link->start, link->end);
-
     fprintf(stdout, "\nStarting point: %d, depth: %d, current link: %s -> %s\n", i, depth, link->start, link->end);
 
-    if (depth > 0) recursiveWorstCaseFailure(links, trafficLinks, maxLineLength, depth - 1, i + 1);
+    if (depth > 0) recursiveWorstCaseFailure(links, trafficLinks, maxNumberOfLinks, depth - 1, i + 1);
 
     if (depth == 0)
     {
@@ -286,7 +282,7 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, int m
       fprintf(stdout, "Determing traffic\n");
       for (int i = 0; i < trafficLinks->size; i++)
       {
-        Link ** pathValues = (Link **)malloc(maxLineLength * sizeof(Link **));
+        Link ** pathValues = (Link **)malloc(maxNumberOfLinks * sizeof(Link **));
         Links * path = (Links *)malloc(sizeof(pathValues) + sizeof(u32));
         path->values = pathValues;
 
@@ -336,8 +332,8 @@ int main(int argc, char ** args)
   char *trafficFileName = NULL;
   char *linksToKill = NULL;
   char *nodesToKill = NULL;
-  int simulateLinksToKill = 1;
-  int simulateNodesToKill = -1;
+  int simulateNumberOfLinksToKill = 1;
+  int simulateNumberOfNodesToKill = -1;
 
   FILE * networkFile = NULL;
   FILE * trafficFile = NULL;
@@ -357,10 +353,10 @@ int main(int argc, char ** args)
               nodesToKill = optarg;
               break;
           case 's':
-              simulateLinksToKill = atoi(optarg);
+              simulateNumberOfLinksToKill = atoi(optarg);
               break;
           case 'm':
-              simulateNodesToKill = atoi(optarg);
+              simulateNumberOfNodesToKill = atoi(optarg);
               break;
           default:
               fprintf(stderr, "Usage: %s -n <network filename> -t <traffic filename> [-l <links to kill>] [-k <nodes to kill>] [-s <simulate n links to kill>] [-m <simulate n nodes to kill>]\n", args[0]);
@@ -387,15 +383,18 @@ int main(int argc, char ** args)
       return EXIT_FAILURE;
   }
 
-  int maxLineLength = 1024;
-  char buffer[maxLineLength];
+  // todo: determine this programmatically from the files
+  u32 maxNumberOfLinks = 1024;
+  u32 maxSizeOfCSVLine = 1024;
 
-  Link ** values = (Link **)malloc(maxLineLength * sizeof(Link **));
+  char buffer[maxSizeOfCSVLine];
+
+  Link ** values = (Link **)malloc(maxNumberOfLinks * sizeof(Link *));
   Links * links = (Links *)malloc(sizeof(values) + sizeof(u32));
   links->values = values;
 
   int line = 0;
-  while (fgets(buffer, maxLineLength, networkFile))
+  while (fgets(buffer, maxSizeOfCSVLine, networkFile))
   {
     if (line != 0) // skip header
     {
@@ -472,12 +471,12 @@ int main(int argc, char ** args)
 
   links->size = line - 1;
 
-  TrafficLink ** trafficValues = (TrafficLink **)malloc(maxLineLength * sizeof(TrafficLink **));
+  TrafficLink ** trafficValues = (TrafficLink **)malloc(maxNumberOfLinks * sizeof(TrafficLink *));
   TrafficLinks * trafficLinks = (TrafficLinks *)malloc(sizeof(trafficValues) + sizeof(u32));
   trafficLinks->values = trafficValues;
 
   line = 0;
-  while (fgets(buffer, maxLineLength, trafficFile))
+  while (fgets(buffer, maxSizeOfCSVLine, trafficFile))
   {
     if (line != 0) // skip header
     {
@@ -540,7 +539,7 @@ int main(int argc, char ** args)
 
   for (int i = 0; i < trafficLinks->size; i++)
   {
-    Link ** pathValues = (Link **)malloc(maxLineLength * sizeof(Link **));
+    Link ** pathValues = (Link **)malloc(maxNumberOfLinks * sizeof(Link **));
     Links * path = (Links *)malloc(sizeof(pathValues) + sizeof(u32));
     path->values = pathValues;
 
@@ -582,7 +581,7 @@ int main(int argc, char ** args)
   fprintf(stdout, "------------------\n");
   fprintf(stdout, "Testing Worst Case Failure\n");
 
-  recursiveWorstCaseFailure(links, trafficLinks, maxLineLength, simulateLinksToKill - 1, 0);
+  recursiveWorstCaseFailure(links, trafficLinks, maxNumberOfLinks, simulateNumberOfLinksToKill - 1, 0);
 
   return 0;
 }

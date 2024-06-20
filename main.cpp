@@ -267,7 +267,7 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, u32 m
 
     if (depth == 0)
     {
-      fprintf(stdout, "\n##Deactivated\n");
+      fprintf(stdout, "\n\n## Deactivated\n");
       for (int j = 0; j < links->size; j++) // reset load
       {
         links->values[j]->load = 0;
@@ -286,7 +286,7 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, u32 m
         TrafficLink * trafficLink = trafficLinks->values[i];
         char * source = trafficLink->source;
         char * destination = trafficLink->destination;
-        fprintf(stdout, "%s -> %s\n", source, destination);
+        fprintf(stdout, "\n### Route\n%s --> %s\n", source, destination);
         u32 demand = trafficLink->demand;
 
         findShortestPath(links, path, source, destination);
@@ -314,7 +314,7 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, u32 m
         free(pathValues);
         free(path);
       }
-      fprintf(stdout, "\n\n### Total Load\n");
+      fprintf(stdout, "\n### Total Load\nLink, Demand/Capacity, Percentage\n");
       for (int i = 0; i < links->size; i++)
       {
         Link * link = links->values[i];
@@ -585,9 +585,11 @@ int main(int argc, char ** args)
     }
   }
 
-
-  fprintf(stdout, "\n\n\n### Simulating Network Failure\n");
-  recursiveWorstCaseFailure(links, trafficLinks, maxNumberOfLinks, simulateNumberOfLinksToKill - 1, 0);
+  if (simulateNumberOfLinksToKill > 0)
+  {
+    fprintf(stdout, "\n\n\n### Simulating Network Failure\n");
+    recursiveWorstCaseFailure(links, trafficLinks, maxNumberOfLinks, simulateNumberOfLinksToKill - 1, 0);
+  }
 
   return 0;
 }

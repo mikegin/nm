@@ -6,7 +6,7 @@ Given a network and traffic demands described in csv format (for examples see ne
 
 Simulate N number of link failures and see how that effects traffic and link load.
 
-See sample output at out.md
+See out file for example output
 
 ### compile
 ```

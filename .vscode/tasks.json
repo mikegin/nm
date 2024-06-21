@@ -5,13 +5,8 @@
             "label": "build nm",
             "type": "shell",
             "command": "clang++",
-            "args": [
-                "-g",
-                "${workspaceFolder}/main.cpp",
-                "-o",
-                "${workspaceFolder}/nm",
-                "-DDEBUG"
-            ],
+            // "args": ["-g", "${workspaceFolder}/main.cpp", "-o", "${workspaceFolder}/nm", "-DDEBUG"],
+            "args": ["-g", "${workspaceFolder}/main.cpp", "-o", "${workspaceFolder}/nm", "-I/usr/local/include", "-L/usr/local/lib", "-lraylib", "-lGL", "-lm", "-lpthread", "-ldl", "-lrt", "-lX11", "-DGUI", "-DDEBUG"], // gui version
             "group": {
                 "kind": "build",
                 "isDefault": true

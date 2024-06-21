@@ -3,14 +3,29 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <math.h>
-#include <unistd.h>
+#include <getopt.h>
+
+#ifdef GUI
+#include "raylib.h"
+#endif
 
 typedef uint32_t u32;
 
+typedef struct Node {
+    unsigned int id;
+    char name[10];
+    float x, y;
+} Node;
+
+typedef struct {
+  Node ** nodes;
+  u32 size;
+} Nodes;
+
 typedef struct Link {
   u32 id;
-  char * start;
-  char * end;
+  Node * start;
+  Node * end;
   u32 capacity;
   u32 weight;
   u32 load;
@@ -32,6 +47,256 @@ typedef struct TrafficLinks {
   TrafficLink ** values;
   u32 size;
 } TrafficLinks;
+
+
+
+#define MAX_NODES 1000
+#define MAX_LINKS 1000
+
+
+
+
+// typedef struct {
+//     int id;
+//     char start[10];
+//     char end[10];
+//     int capacity;
+//     int weight;
+//     int load;
+//     bool isActive;
+// } Link;
+
+// typedef struct {
+//     char source[10];
+//     char destination[10];
+//     int demand;
+// } Traffic;
+
+// Node nodes[MAX_NODES];
+// Link links[MAX_LINKS];
+// Traffic traffic[MAX_NODES];
+// int nodeCount = 0;
+// int linkCount = 0;
+// int trafficCount = 0;
+
+// Function to find or create a node
+// int FindOrCreateNode(const char *id) {
+//     for (int i = 0; i < nodeCount; i++) {
+//         if (strcmp(nodes[i].id, id) == 0) {
+//             return i;
+//         }
+//     }
+//     Node newNode;
+//     strcpy(newNode.id, id);
+//     newNode.x = (nodeCount % 10) * 80 + 50;  // Positioning nodes roughly
+//     newNode.y = (nodeCount / 10) * 80 + 50;
+//     nodes[nodeCount] = newNode;
+//     return nodeCount++;
+// }
+
+// // Function to parse network CSV
+// void ParseNetworkCSV(const char *fileName)
+// {
+//     FILE *file = fopen(fileName, "r");
+//     if (!file)
+//     {
+//       perror("Error opening file");
+//       return;
+//     }
+
+//     char line[256];
+//     fgets(line, sizeof(line), file); // Skip header
+//     while (fgets(line, sizeof(line), file))
+//     {
+//       Link link;
+//       sscanf(line, "%d,%[^,],%[^,],%d,%d", &link.id, link.start, link.end, &link.capacity, &link.weight);
+//       links[linkCount++] = link;
+//       FindOrCreateNode(link.start);
+//       FindOrCreateNode(link.end);
+//     }
+
+//     fclose(file);
+// }
+
+// // Function to parse traffic CSV
+// void ParseTrafficCSV(const char *fileName) {
+//     FILE *file = fopen(fileName, "r");
+//     if (!file) {
+//         perror("Error opening file");
+//         return;
+//     }
+
+//     char line[256];
+//     fgets(line, sizeof(line), file); // Skip header
+//     while (fgets(line, sizeof(line), file)) {
+//         Traffic t;
+//         sscanf(line, "%[^,],%[^,],%d", t.source, t.destination, &t.demand);
+//         traffic[trafficCount++] = t;
+//     }
+
+//     fclose(file);
+// }
+
+
+u32 maxNumberOfLinks = 1024;
+u32 maxSizeOfCSVLine = 1024;
+
+int ParseNetworkCSV(Links * links, FILE * networkFile)
+{
+  char buffer[maxSizeOfCSVLine];
+  int line = 0;
+  while (fgets(buffer, maxSizeOfCSVLine, networkFile))
+  {
+    if (line != 0) // skip header
+    {
+      char * token = strtok(buffer, ",");
+      int pos = 0;
+      Link * link = (Link *)malloc(sizeof(Link));
+      links->values[line - 1] = link;
+      links->values[line - 1]->isActive = true;
+      while (token)
+      {
+        // printf("%s ", token);
+        switch(pos) {
+          case 0: {
+            link->id = atoi(token);
+#ifdef DEBUG
+            printf("%d ", link->id);
+#endif            
+            break;
+          }
+          case 1: {            
+            Node * node = (Node *)malloc(sizeof(Node));
+            // node->name = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
+            if (node == NULL || node->name == NULL) {
+              fprintf(stderr, "Memory allocation failed\n");
+              return EXIT_FAILURE;
+            }
+            node->name[strlen(token)] = '\0';
+            link->start = node;
+            
+            strcpy(link->start->name, token);
+
+#ifdef DEBUG
+            printf("%s ", link->start->name);
+#endif
+            break;
+          }
+          case 2: {
+            // Similarly allocate memory for link->end
+            Node * node = (Node *)malloc(sizeof(Node));
+            // node->name = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
+            if (node == NULL || node->name == NULL) {
+              fprintf(stderr, "Memory allocation failed\n");
+              return EXIT_FAILURE;
+            }
+            node->name[strlen(token)] = '\0';
+            link->end = node;
+
+            strcpy(link->end->name, token);
+#ifdef DEBUG
+            printf("%s ", link->end);
+#endif
+            break;
+          }
+          case 3: {
+            link->capacity = atoi(token);
+#ifdef DEBUG            
+            printf("%d ", link->capacity);
+#endif            
+            break;
+          }
+          case 4: {
+            link->weight = atoi(token);
+#ifdef DEBUG            
+            printf("%d ", link->weight);
+#endif            
+            break;
+          }
+        }
+        token = strtok(NULL, ",");
+        pos += 1;
+      }
+#ifdef DEBUG
+      printf("\n");
+#endif
+    }
+
+    line += 1;
+  }
+
+  links->size = line - 1;
+
+  return 0;
+}
+
+int ParseTrafficCSV(TrafficLinks * trafficLinks, FILE * trafficFile)
+{
+  int line = 0;
+  char buffer[maxSizeOfCSVLine];
+  while (fgets(buffer, maxSizeOfCSVLine, trafficFile))
+  {
+    if (line != 0) // skip header
+    {
+      char * token = strtok(buffer, ",");
+      int pos = 0;
+      TrafficLink * trafficLink = (TrafficLink *)malloc(sizeof(TrafficLink));
+      trafficLinks->values[line - 1] = trafficLink;
+      while (token)
+      {
+        switch(pos) {
+          case 0: {
+            trafficLink->source = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
+            trafficLink->source[strlen(token)] = '\0';
+
+            if (trafficLink->source == NULL) {
+              fprintf(stderr, "Memory allocation failed\n");
+              return EXIT_FAILURE;
+            }
+
+            strcpy(trafficLink->source, token);
+#ifdef DEBUG
+            printf("%s ", trafficLink->source);
+#endif
+            break;
+          }
+          case 1: {
+            trafficLink->destination = (char *)malloc(strlen(token) + 1);
+            trafficLink->destination[strlen(token)] = '\0';
+
+            if (trafficLink->destination == NULL) {
+              fprintf(stderr, "Memory allocation failed\n");
+              return EXIT_FAILURE;
+            }
+            strcpy(trafficLink->destination, token);
+#ifdef DEBUG
+            printf("%s ", trafficLink->destination);
+#endif
+            break;
+          }
+          case 2: {
+            trafficLink->demand = atoi(token);
+#ifdef DEBUG            
+            printf("%d ", trafficLink->demand);
+#endif            
+            break;
+          }
+        }
+        token = strtok(NULL, ",");
+        pos += 1;
+      }
+#ifdef DEBUG
+      printf("\n");
+#endif
+    }
+
+    line += 1;
+  }
+
+  trafficLinks->size = line - 1;
+
+  return 0;
+}
 
 /**
  * This uses Dijakstra's shortest path algorithm
@@ -66,15 +331,15 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
     char foundEnd = 0;
     for (int j = 0; j < nodesSize; j++)
     {
-      if (strcmp(links->values[i]->start, nodes[j]) == 0) foundStart = 1;
-      if (strcmp(links->values[i]->end, nodes[j]) == 0) foundEnd = 1;
+      if (strcmp(links->values[i]->start->name, nodes[j]) == 0) foundStart = 1;
+      if (strcmp(links->values[i]->end->name, nodes[j]) == 0) foundEnd = 1;
     }
     
     if (!foundStart)
     {
-      nodes[nodesSize] = links->values[i]->start;
+      nodes[nodesSize] = links->values[i]->start->name;
       weights[nodesSize] = UINT32_MAX;
-      if (strcmp(links->values[i]->start, node1) == 0)
+      if (strcmp(links->values[i]->start->name, node1) == 0)
       {
         weights[nodesSize] = 0;
         currentIndex = nodesSize;
@@ -83,9 +348,9 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
     }
     if (!foundEnd)
     {
-      nodes[nodesSize] = links->values[i]->end;
+      nodes[nodesSize] = links->values[i]->end->name;
       weights[nodesSize] = UINT32_MAX;
-      if (strcmp(links->values[i]->end, node1) == 0)
+      if (strcmp(links->values[i]->end->name, node1) == 0)
       {
         weights[nodesSize] = 0;
         currentIndex = nodesSize;
@@ -120,8 +385,8 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
 #endif
 
       char * other = NULL;
-      if (strcmp(current, link->start) == 0) other = link->end;
-      if (strcmp(current, link->end) == 0) other = link->start;
+      if (strcmp(current, link->start->name) == 0) other = link->end->name;
+      if (strcmp(current, link->end->name) == 0) other = link->start->name;
 
 #ifdef DEBUG
       if (!other) fprintf(stdout, " -- skipping\n");
@@ -226,8 +491,8 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
     path->size = iterationCount + 1;
 
     char * other;
-    if (strcmp(current, p->start) == 0) other = p->end;
-    if (strcmp(current, p->end) == 0) other = p->start;
+    if (strcmp(current, p->start->name) == 0) other = p->end->name;
+    if (strcmp(current, p->end->name) == 0) other = p->start->name;
 
     for (int i = 0; i < nodesSize; i++)
     {
@@ -299,8 +564,8 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, u32 m
           {
             Link * link = path->values[j];
             char * other = NULL;
-            if (strcmp(first, link->start) == 0) other = link->end;
-            if (strcmp(first, link->end) == 0) other = link->start;
+            if (strcmp(first, link->start->name) == 0) other = link->end->name;
+            if (strcmp(first, link->end->name) == 0) other = link->start->name;
             u32 capacity = link->capacity;
             fprintf(stdout, "%s -> %s, %u/%u, %.2f%%\n", first, other, demand, capacity, ((double)demand / (double)capacity * 100));
             first = other;
@@ -326,6 +591,123 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, u32 m
   }
 }
 
+#ifdef GUI
+int RunGUI()
+{
+
+
+    FILE * networkFile = NULL;
+    FILE * trafficFile = NULL;
+   //--------------------------------------------------------------------------------------
+    // Set the window to be resizable and support drag-and-drop
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_ALWAYS_RUN);
+
+    const int screenWidth = 2400;
+    const int screenHeight = 1800;
+
+
+    InitWindow(screenWidth, screenHeight, "raylib [core] example - basic window");
+
+    SetTargetFPS(60); // Set our game to run at 60 frames-per-second
+
+
+    Link ** values = (Link **)malloc(maxNumberOfLinks * sizeof(Link *));
+    Links * links = (Links *)malloc(sizeof(values) + sizeof(u32));
+    links->values = values;
+
+    TrafficLink ** trafficValues = (TrafficLink **)malloc(maxNumberOfLinks * sizeof(TrafficLink *));
+    TrafficLinks * trafficLinks = (TrafficLinks *)malloc(sizeof(trafficValues) + sizeof(u32));
+    trafficLinks->values = trafficValues;
+
+    //--------------------------------------------------------------------------------------
+
+    // Main game loop
+    while (!WindowShouldClose()) // Detect window close button or ESC key
+    {
+        // Update
+        //----------------------------------------------------------------------------------
+        int count = 0;
+        FilePathList droppedFiles = LoadDroppedFiles();
+        count = droppedFiles.count;
+
+        if (count > 0) {
+            for (int i = 0; i < count; i++) {
+                // Check if the dropped file is a CSV file
+                char * dropFilePath = droppedFiles.paths[i];
+                if (IsFileExtension(droppedFiles.paths[i], ".csv")) {
+                    if (strstr(droppedFiles.paths[i], "network.csv")) {
+                        networkFile = fopen(droppedFiles.paths[i], "r");
+                        if (networkFile == NULL) {
+                            perror("Error opening network file");
+                            return EXIT_FAILURE;
+                        }
+                        int parseNetworkCSVError = ParseNetworkCSV(links, networkFile);
+                    } else if (strstr(droppedFiles.paths[i], "traffic.csv")) {
+                      trafficFile = fopen(droppedFiles.paths[i], "r");
+                      if (trafficFile == NULL) {
+                          perror("Error opening traffic file");
+                          fclose(networkFile);
+                          return EXIT_FAILURE;
+                      }
+                        int parseTrafficCSVError = ParseTrafficCSV(trafficLinks, trafficFile);
+                    }
+                }
+            }
+            UnloadDroppedFiles(droppedFiles);
+        }
+
+        // Draw
+        //----------------------------------------------------------------------------------
+        BeginDrawing();
+
+        ClearBackground(RAYWHITE);
+
+        // Draw links
+        // for (int i = 0; i < links->size; i++) {
+        //   int startNodeIndex = FindOrCreateNode(links[i]->start);
+        //   int endNodeIndex = FindOrCreateNode(links->values[i]->end);
+        //   DrawLineV((Vector2){nodes[startNodeIndex].x, nodes[startNodeIndex].y}, 
+        //             (Vector2){nodes[endNodeIndex].x, nodes[endNodeIndex].y}, BLACK);
+        // }
+
+        // // Draw nodes
+        // for (int i = 0; i < nodeCount; i++) {
+        //   DrawCircleV((Vector2){nodes[i].x, nodes[i].y}, 5, RED);
+        //   DrawText(nodes[i].id, nodes[i].x + 10, nodes[i].y, 10, DARKGRAY);
+        // }
+
+        // // Draw traffic demands
+        // for (int i = 0; i < trafficCount; i++) {
+        //   int sourceNodeIndex = FindOrCreateNode(traffic[i].source);
+        //   int destNodeIndex = FindOrCreateNode(traffic[i].destination);
+        //   DrawLineV((Vector2){nodes[sourceNodeIndex].x, nodes[sourceNodeIndex].y}, 
+        //             (Vector2){nodes[destNodeIndex].x, nodes[destNodeIndex].y}, BLUE);
+        //   DrawText(TextFormat("%d", traffic[i].demand), 
+        //             (nodes[sourceNodeIndex].x + nodes[destNodeIndex].x) / 2, 
+        //             (nodes[sourceNodeIndex].y + nodes[destNodeIndex].y) / 2, 
+        //             10, DARKGRAY);
+        // }
+
+        DrawText("Drag and drop a network or traffic CSV file onto the window", 10, 10, 20, DARKGRAY);
+
+        EndDrawing();
+        //----------------------------------------------------------------------------------
+    }
+
+    // De-Initialization
+    //--------------------------------------------------------------------------------------
+    CloseWindow(); // Close window and OpenGL context
+    //--------------------------------------------------------------------------------------
+
+    return 0;
+}
+#endif
+
+static struct option long_options[] = {
+    {"gui", no_argument, 0, 'g'},
+    {0, 0, 0, 0}
+};
+
 int main(int argc, char ** args)
 {
   int opt;
@@ -335,12 +717,15 @@ int main(int argc, char ** args)
   char *nodesToKill = NULL;
   int simulateNumberOfLinksToKill = 1;
   int simulateNumberOfNodesToKill = -1;
+  bool runGUI = false;
 
-  FILE * networkFile = NULL;
-  FILE * trafficFile = NULL;
+  int option_index = 0;
 
-  while ((opt = getopt(argc, args, "n:t:l:k:s:m:")) != -1) {
+  while ((opt = getopt_long(argc, args, "gn:t:l:k:s:m:", long_options, &option_index)) != -1) {
       switch (opt) {
+          case 'g':
+              runGUI = true;
+              break;
           case 'n':
               networkFileName = optarg;
               break;
@@ -360,14 +745,25 @@ int main(int argc, char ** args)
               simulateNumberOfNodesToKill = atoi(optarg);
               break;
           default:
-              fprintf(stderr, "Usage: %s -n <network filename> -t <traffic filename> [-l <links to kill>] [-k <nodes to kill>] [-s <simulate n links to kill>] [-m <simulate n nodes to kill>]\n", args[0]);
+              fprintf(stderr, "Usage: %s [-g|--gui] -n <network filename> -t <traffic filename> [-l <links to kill>] [-k <nodes to kill>] [-s <simulate n links to kill>] [-m <simulate n nodes to kill>]\n", args[0]);
               return EXIT_FAILURE;
       }
   }
 
+#ifdef GUI
+  if (runGUI)
+  {
+    RunGUI();
+    return 0;
+  }
+#endif
+
+  FILE * networkFile = NULL;
+  FILE * trafficFile = NULL;
+
   if (networkFileName == NULL || trafficFileName == NULL) {
     fprintf(stderr, "Both -n and -t options are required.\n");
-    fprintf(stderr, "Usage: %s -n <network filename> -t <traffic filename> [-l <links to kill>] [-k <nodes to kill>] [-s <simulate n links to kill>] [-m <simulate n nodes to kill>]\n", args[0]);
+    fprintf(stderr, "Usage: %s [-g|--gui] -n <network filename> -t <traffic filename> [-l <links to kill>] [-k <nodes to kill>] [-s <simulate n links to kill>] [-m <simulate n nodes to kill>]\n", args[0]);
     return EXIT_FAILURE;
   }
 
@@ -385,158 +781,20 @@ int main(int argc, char ** args)
   }
 
   // todo: determine this programmatically from the files
-  u32 maxNumberOfLinks = 1024;
-  u32 maxSizeOfCSVLine = 1024;
-
-  char buffer[maxSizeOfCSVLine];
 
   Link ** values = (Link **)malloc(maxNumberOfLinks * sizeof(Link *));
   Links * links = (Links *)malloc(sizeof(values) + sizeof(u32));
   links->values = values;
 
-  int line = 0;
-  while (fgets(buffer, maxSizeOfCSVLine, networkFile))
-  {
-    if (line != 0) // skip header
-    {
-      char * token = strtok(buffer, ",");
-      int pos = 0;
-      Link * link = (Link *)malloc(sizeof(Link));
-      links->values[line - 1] = link;
-      links->values[line - 1]->isActive = true;
-      while (token)
-      {
-        // printf("%s ", token);
-        switch(pos) {
-          case 0: {
-            link->id = atoi(token);
-#ifdef DEBUG
-            printf("%d ", link->id);
-#endif            
-            break;
-          }
-          case 1: {
-            // Allocate memory properly for the string and check for allocation failure
-            link->start = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
-            link->start[strlen(token)] = '\0';
-
-            if (link->start == NULL) {
-              fprintf(stderr, "Memory allocation failed\n");
-              return EXIT_FAILURE;
-            }
-            strcpy(link->start, token);
-#ifdef DEBUG
-            printf("%s ", link->start);
-#endif
-            break;
-          }
-          case 2: {
-            // Similarly allocate memory for link->end
-            link->end = (char *)malloc(strlen(token) + 1);
-            link->end[strlen(token)] = '\0';
-            if (link->end == NULL) {
-              fprintf(stderr, "Memory allocation failed\n");
-              return EXIT_FAILURE;
-            }
-            strcpy(link->end, token);
-#ifdef DEBUG
-            printf("%s ", link->end);
-#endif
-            break;
-          }
-          case 3: {
-            link->capacity = atoi(token);
-#ifdef DEBUG            
-            printf("%d ", link->capacity);
-#endif            
-            break;
-          }
-          case 4: {
-            link->weight = atoi(token);
-#ifdef DEBUG            
-            printf("%d ", link->weight);
-#endif            
-            break;
-          }
-        }
-        token = strtok(NULL, ",");
-        pos += 1;
-      }
-#ifdef DEBUG
-      printf("\n");
-#endif
-    }
-
-    line += 1;
-  }
-
-  links->size = line - 1;
+  int parseNetworkCSVError = ParseNetworkCSV(links, networkFile);
+  if (parseNetworkCSVError) return parseNetworkCSVError;
 
   TrafficLink ** trafficValues = (TrafficLink **)malloc(maxNumberOfLinks * sizeof(TrafficLink *));
   TrafficLinks * trafficLinks = (TrafficLinks *)malloc(sizeof(trafficValues) + sizeof(u32));
   trafficLinks->values = trafficValues;
 
-  line = 0;
-  while (fgets(buffer, maxSizeOfCSVLine, trafficFile))
-  {
-    if (line != 0) // skip header
-    {
-      char * token = strtok(buffer, ",");
-      int pos = 0;
-      TrafficLink * trafficLink = (TrafficLink *)malloc(sizeof(TrafficLink));
-      trafficLinks->values[line - 1] = trafficLink;
-      while (token)
-      {
-        switch(pos) {
-          case 0: {
-            trafficLink->source = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
-            trafficLink->source[strlen(token)] = '\0';
-
-            if (trafficLink->source == NULL) {
-              fprintf(stderr, "Memory allocation failed\n");
-              return EXIT_FAILURE;
-            }
-
-            strcpy(trafficLink->source, token);
-#ifdef DEBUG
-            printf("%s ", trafficLink->source);
-#endif
-            break;
-          }
-          case 1: {
-            trafficLink->destination = (char *)malloc(strlen(token) + 1);
-            trafficLink->destination[strlen(token)] = '\0';
-
-            if (trafficLink->destination == NULL) {
-              fprintf(stderr, "Memory allocation failed\n");
-              return EXIT_FAILURE;
-            }
-            strcpy(trafficLink->destination, token);
-#ifdef DEBUG
-            printf("%s ", trafficLink->destination);
-#endif
-            break;
-          }
-          case 2: {
-            trafficLink->demand = atoi(token);
-#ifdef DEBUG            
-            printf("%d ", trafficLink->demand);
-#endif            
-            break;
-          }
-        }
-        token = strtok(NULL, ",");
-        pos += 1;
-      }
-#ifdef DEBUG
-      printf("\n");
-#endif
-    }
-
-    line += 1;
-  }
-
-  trafficLinks->size = line - 1;
+  int parseTrafficCSVError = ParseTrafficCSV(trafficLinks, trafficFile);
+  if (parseTrafficCSVError) return parseTrafficCSVError;
 
   if (trafficLinks->size > 0)
   {
@@ -563,8 +821,8 @@ int main(int argc, char ** args)
           {
             Link * link = path->values[j];
             char * other = NULL;
-            if (strcmp(first, link->start) == 0) other = link->end;
-            if (strcmp(first, link->end) == 0) other = link->start;
+            if (strcmp(first, link->start->name) == 0) other = link->end->name;
+            if (strcmp(first, link->end->name) == 0) other = link->start->name;
             u32 capacity = link->capacity;
             fprintf(stdout, "%s -> %s, %u/%u, %.2f%%\n", first, other, demand, capacity, ((double)demand / (double)capacity * 100));
             first = other;

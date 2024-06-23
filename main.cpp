@@ -5,20 +5,36 @@
 #include <math.h>
 #include <getopt.h>
 
+#include "set.cpp"
+#include "hash.cpp"
+
 #ifdef GUI
 #include "raylib.h"
 #endif
 
 typedef uint32_t u32;
 
+#define MAX_NODES 1000
+#define MAX_LINKS MAX_NODES * MAX_NODES
+#define MAX_NODE_NAME_LENGTH 10
+#define MAX_LINE_LENGTH 1024
 typedef struct Node {
     unsigned int id;
-    char name[10];
+    char name[MAX_NODE_NAME_LENGTH];
+    
+    // used in calculating shortest path for a route
+    bool visited;
+    u32 weight;
+    struct Link * shortestPath;
+    struct Link * associatedLinks[MAX_NODES];
+    u32 numberOfAssociatedLinks;
+    
+    // gui specific fields
     float x, y;
 } Node;
 
-typedef struct {
-  Node ** nodes;
+typedef struct Nodes {
+  Node ** values;
   u32 size;
 } Nodes;
 
@@ -38,8 +54,8 @@ typedef struct Links {
 } Links;
 
 typedef struct TrafficLink {
-  char * source;
-  char * destination;
+  Node * source;
+  Node * destination;
   u32 demand;
 } TrafficLink;
 
@@ -50,9 +66,43 @@ typedef struct TrafficLinks {
 
 
 
-#define MAX_NODES 1000
-#define MAX_LINKS 1000
+Node * getNodeByName(Nodes * nodes, char * name)
+{
+  for (int i = 0; i < nodes->size; i++)
+  {
+    if (strcmp(nodes->values[i]->name, name) == 0)
+    {
+      return nodes->values[i];
+    }
+  }
 
+  return NULL;
+}
+
+int insertNode(Nodes * nodes, Node * node)
+{
+  if (nodes->size == MAX_NODES) return EXIT_FAILURE;
+
+  node->id = nodes->size;
+  nodes->values[nodes->size] = node;
+  nodes->size++;
+
+  return 0;
+}
+
+void addAssociatedLink(Node * node, Link * link)
+{
+  for (int i = 0; i < node->numberOfAssociatedLinks; i++)
+  {
+    if (node->associatedLinks[i]->id == link->id)
+    {
+      return; // link already added
+    }
+  }
+
+  node->associatedLinks[node->numberOfAssociatedLinks] = link;
+  node->numberOfAssociatedLinks++;
+}
 
 
 
@@ -73,7 +123,7 @@ typedef struct TrafficLinks {
 // } Traffic;
 
 // Node nodes[MAX_NODES];
-// Link links[MAX_LINKS];
+// Link links[MAX_NODES];
 // Traffic traffic[MAX_NODES];
 // int nodeCount = 0;
 // int linkCount = 0;
@@ -137,15 +187,60 @@ typedef struct TrafficLinks {
 //     fclose(file);
 // }
 
+// unsigned int nodeHash(void* value) {
+//     char * name = ((Node *) value)->name;
+//     uint32_t hash = SuperFastHash(name, 10);
+//     return hash % TABLE_SIZE;
+// }
 
-u32 maxNumberOfLinks = 1024;
-u32 maxSizeOfCSVLine = 1024;
+// int nodeCompare(void* a, void* b) {
+//     return strcmp(((Node *) a)->name, ((Node *) b)->name);
+// }
 
-int ParseNetworkCSV(Links * links, FILE * networkFile)
+
+
+int createNodeFromToken(Node ** p, Nodes * nodes, char * token)
 {
-  char buffer[maxSizeOfCSVLine];
+  // check does the node exists, if it does, set p to that
+  // otherwise, create the node, set it to p, insert it into nodes
+
+  Node * found = getNodeByName(nodes, token);
+
+  if (found)
+  {
+    *p = found;
+    return 0;
+  }
+
+
+  Node * node = (Node *)malloc(sizeof(Node));
+  if (node == NULL) {
+    fprintf(stderr, "Memory allocation failed\n");
+    return EXIT_FAILURE;
+  }
+  strcpy(node->name, token);
+  node->name[strlen(token)] = '\0';
+  node->visited = false;
+  node->weight = 0;
+  node->shortestPath = NULL;
+
+  int err = insertNode(nodes, node);
+  if (err)
+  {
+    free(node);
+    return err;
+  }
+
+  *p = node;
+
+  return 0;
+}
+
+int ParseNetworkCSV(Links * links, Nodes * nodes, FILE * networkFile)
+{
+  char buffer[MAX_LINE_LENGTH];
   int line = 0;
-  while (fgets(buffer, maxSizeOfCSVLine, networkFile))
+  while (fgets(buffer, MAX_LINE_LENGTH, networkFile))
   {
     if (line != 0) // skip header
     {
@@ -156,70 +251,33 @@ int ParseNetworkCSV(Links * links, FILE * networkFile)
       links->values[line - 1]->isActive = true;
       while (token)
       {
-        // printf("%s ", token);
         switch(pos) {
           case 0: {
             link->id = atoi(token);
-#ifdef DEBUG
-            printf("%d ", link->id);
-#endif            
             break;
           }
-          case 1: {            
-            Node * node = (Node *)malloc(sizeof(Node));
-            // node->name = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
-            if (node == NULL || node->name == NULL) {
-              fprintf(stderr, "Memory allocation failed\n");
-              return EXIT_FAILURE;
-            }
-            node->name[strlen(token)] = '\0';
-            link->start = node;
-            
-            strcpy(link->start->name, token);
-
-#ifdef DEBUG
-            printf("%s ", link->start->name);
-#endif
+          case 1: {
+            createNodeFromToken(&link->start, nodes, token);
+            addAssociatedLink(link->start, link);
             break;
           }
           case 2: {
-            // Similarly allocate memory for link->end
-            Node * node = (Node *)malloc(sizeof(Node));
-            // node->name = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
-            if (node == NULL || node->name == NULL) {
-              fprintf(stderr, "Memory allocation failed\n");
-              return EXIT_FAILURE;
-            }
-            node->name[strlen(token)] = '\0';
-            link->end = node;
-
-            strcpy(link->end->name, token);
-#ifdef DEBUG
-            printf("%s ", link->end);
-#endif
+            createNodeFromToken(&link->end, nodes, token);
+            addAssociatedLink(link->end, link);
             break;
           }
           case 3: {
             link->capacity = atoi(token);
-#ifdef DEBUG            
-            printf("%d ", link->capacity);
-#endif            
             break;
           }
           case 4: {
             link->weight = atoi(token);
-#ifdef DEBUG            
-            printf("%d ", link->weight);
-#endif            
             break;
           }
         }
         token = strtok(NULL, ",");
         pos += 1;
       }
-#ifdef DEBUG
-      printf("\n");
-#endif
     }
 
     line += 1;
@@ -230,11 +288,11 @@ int ParseNetworkCSV(Links * links, FILE * networkFile)
   return 0;
 }
 
-int ParseTrafficCSV(TrafficLinks * trafficLinks, FILE * trafficFile)
+int ParseTrafficCSV(TrafficLinks * trafficLinks, Nodes * nodes, FILE * trafficFile)
 {
   int line = 0;
-  char buffer[maxSizeOfCSVLine];
-  while (fgets(buffer, maxSizeOfCSVLine, trafficFile))
+  char buffer[MAX_LINE_LENGTH];
+  while (fgets(buffer, MAX_LINE_LENGTH, trafficFile))
   {
     if (line != 0) // skip header
     {
@@ -246,48 +304,21 @@ int ParseTrafficCSV(TrafficLinks * trafficLinks, FILE * trafficFile)
       {
         switch(pos) {
           case 0: {
-            trafficLink->source = (char *)malloc(strlen(token) + 1); // +1 for the null terminator
-            trafficLink->source[strlen(token)] = '\0';
-
-            if (trafficLink->source == NULL) {
-              fprintf(stderr, "Memory allocation failed\n");
-              return EXIT_FAILURE;
-            }
-
-            strcpy(trafficLink->source, token);
-#ifdef DEBUG
-            printf("%s ", trafficLink->source);
-#endif
+            createNodeFromToken(&trafficLink->source, nodes, token);
             break;
           }
           case 1: {
-            trafficLink->destination = (char *)malloc(strlen(token) + 1);
-            trafficLink->destination[strlen(token)] = '\0';
-
-            if (trafficLink->destination == NULL) {
-              fprintf(stderr, "Memory allocation failed\n");
-              return EXIT_FAILURE;
-            }
-            strcpy(trafficLink->destination, token);
-#ifdef DEBUG
-            printf("%s ", trafficLink->destination);
-#endif
+            createNodeFromToken(&trafficLink->destination, nodes, token);
             break;
           }
           case 2: {
             trafficLink->demand = atoi(token);
-#ifdef DEBUG            
-            printf("%d ", trafficLink->demand);
-#endif            
             break;
           }
         }
         token = strtok(NULL, ",");
         pos += 1;
       }
-#ifdef DEBUG
-      printf("\n");
-#endif
     }
 
     line += 1;
@@ -301,7 +332,7 @@ int ParseTrafficCSV(TrafficLinks * trafficLinks, FILE * trafficFile)
 /**
  * This uses Dijakstra's shortest path algorithm
 */
-void findShortestPath(Links * links, Links * path, char * node1, char * node2)
+void findShortestPath(Links * links, Links * path, Nodes * nodes, Node * node1, Node * node2)
 {
   // have list of all nodes
   // have list of all node weights
@@ -312,196 +343,97 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
   // update weights for those nodes if link weight + prev node weight is shorter
   // pick next node (smallest weight)
   // repeat
-  char ** nodes = (char **)malloc(2 * links->size * sizeof(char *));
-  u32 * weights = (u32 *)malloc(2 * links->size * sizeof(u32));
-  u32 * visited = (u32 *)calloc(2 * links->size, sizeof(u32)); // avoid nodes
-  u32 nodesSize = 0;
-  
-  Link ** shortestPaths = (Link **)malloc(2 * links->size * sizeof(Link *));
 
-
-  char * current = node1;
-  u32 currentIndex;
-
-  // fill up nodes and set initial weights
-  for (int i = 0; i < links->size; i++)
+  for (int i = 0; i < nodes->size; i++)
   {
-    Link * link = links->values[i];
-    char foundStart = 0;
-    char foundEnd = 0;
-    for (int j = 0; j < nodesSize; j++)
-    {
-      if (strcmp(links->values[i]->start->name, nodes[j]) == 0) foundStart = 1;
-      if (strcmp(links->values[i]->end->name, nodes[j]) == 0) foundEnd = 1;
-    }
-    
-    if (!foundStart)
-    {
-      nodes[nodesSize] = links->values[i]->start->name;
-      weights[nodesSize] = UINT32_MAX;
-      if (strcmp(links->values[i]->start->name, node1) == 0)
-      {
-        weights[nodesSize] = 0;
-        currentIndex = nodesSize;
-      }
-      nodesSize++;
-    }
-    if (!foundEnd)
-    {
-      nodes[nodesSize] = links->values[i]->end->name;
-      weights[nodesSize] = UINT32_MAX;
-      if (strcmp(links->values[i]->end->name, node1) == 0)
-      {
-        weights[nodesSize] = 0;
-        currentIndex = nodesSize;
-      }
-      nodesSize++;
-    }
+    Node * node = nodes->values[i];
+    node->weight = UINT32_MAX;
+    node->visited = false;
   }
+  node1->weight = 0;
 
-#ifdef DEBUG
-  for (int i = 0; i < nodesSize; i++)
+  Node * current = node1;
+
+  // list of nodes we can visit
+  Node * canVisitNodes[MAX_NODES];
+  size_t canVisitNodesSize = 0;
+
+  while (current)
   {
-    fprintf(stdout, "Node %d: %s %lu\n", i, nodes[i], weights[i]);
-  }
-  fprintf(stdout, "----------------------------\n");
-#endif
-
-  while (true)
-  {
-
-#ifdef DEBUG
-    fprintf(stdout, "=======================\n");
-    fprintf(stdout, "Node %d: %s, weight = %d\n", currentIndex, current, weights[currentIndex]);
-#endif
-
-    for (int i = 0; i < links->size; i++)
+    // update current's connected node weights
+    for (int i = 0; i < current->numberOfAssociatedLinks; i++)
     {
       
-      Link * link = links->values[i];
+      Link * link = current->associatedLinks[i];
       if (!link->isActive) continue; // skip inactive links
-#ifdef DEBUG
-      fprintf(stdout, "Link: %s -> %s\n", link->start, link->end);
-#endif
 
-      char * other = NULL;
-      if (strcmp(current, link->start->name) == 0) other = link->end->name;
-      if (strcmp(current, link->end->name) == 0) other = link->start->name;
+      Node * other = NULL;
+      if(current->id == link->start->id) other = link->end;
+      if(current->id == link->end->id) other = link->start;
 
-#ifdef DEBUG
-      if (!other) fprintf(stdout, " -- skipping\n");
-#endif
+      // fprintf(stdout, "Examining %s weight = %lu, Other %s weight = %lu\n", current->name, current->weight, other->name, other->weight);
 
-      if (!other) continue; // link doesn't touch current
+      // if (!other) continue; // link doesn't touch current
 
-#ifdef DEBUG
-      fprintf(stdout, " --> %s", other);
-#endif
+      // if (other->visited) continue;
 
-
-      u32 otherIndex = 0;
-      for (int j = 0; j < nodesSize; j++)
+      if (current->weight + link->weight < other->weight) 
       {
-        if (strcmp(nodes[j], other) == 0)
-        {
-          otherIndex = j;
-          break;
-        }
+        other->weight = current->weight + link->weight;
+        other->shortestPath = link;
       }
 
-      if (visited[otherIndex])
+      if (!other->visited)
       {
-#ifdef DEBUG
-        fprintf(stdout, " (visited)\n");
-#endif
-        continue;
-      }
-      
-#ifdef DEBUG
-      fprintf(stdout, "\n");
-#endif
-
-#ifdef DEBUG
-      fprintf(stdout, " --> Node %d\n", otherIndex);
-#endif
-
-      if (weights[currentIndex] + link->weight < weights[otherIndex]) 
-      {
-        weights[otherIndex] = weights[currentIndex] + link->weight;
-        shortestPaths[otherIndex] = link;
+        canVisitNodes[canVisitNodesSize] = other;
+        canVisitNodesSize++;
       }
     }
 
-    visited[currentIndex] = 1;
-
-    if (strcmp(current, node2) == 0) break;
-
+    current->visited = 1;
 
     // pick next
-    char * next = NULL;
+    Node * next = NULL;
     u32 min = INT32_MAX;
-    for (int i = 0; i < nodesSize; i++)
+    int canVisitNodesIndex = -1;
+    for (int i = 0; i < canVisitNodesSize; i++)
     {
-      if (visited[i] == 0 && weights[i] < min)
+      Node * node = canVisitNodes[i];
+      if (!node->visited && node->weight < min)
       {
-        min = weights[i];
-        next = nodes[i];
-        currentIndex = i;
+        min = node->weight;
+        next = node;
+        canVisitNodesIndex = i;
       }
     }
-
-    if (!next) break;
-
-#ifdef DEBUG
-    fprintf(stdout, "Next: %s\n", next);
-    for (int i = 0; i < nodesSize; i++)
-    {
-      fprintf(stdout, " ++ Node %d: %s, weight = %lu, visited = %d\n", i, nodes[i], weights[i], visited[i]);
-    }
-#endif
-
+    // if (next) fprintf(stdout, "Current: %s weight = %d, Next: %s weight = %d\n", current->name, current->weight, next->name, next->weight);
 
     current = next;
+
+    if (current && current->id == node2->id) break;
   }
 
-  if (strcmp(current, node2) != 0) 
+  if (!current || current->id != node2->id) 
   {
     path = NULL; // path not found
     return;
   }
 
   // traverse shortest paths in reverse to get shortest path
-  
   current = node2;
-
-  for (int i = 0; i < nodesSize; i++)
-  {
-    if (strcmp(nodes[i], node2) == 0)
-    {
-      currentIndex = i;
-      break;
-    }
-  }
-
   u32 iterationCount = 0;
-  while (strcmp(current, node1) != 0)
+  while (current->id != node1->id)
   {
-    Link * p = shortestPaths[currentIndex];
-    path->values[iterationCount] = p;
+    Link * link = current->shortestPath;
+    path->values[iterationCount] = link;
     path->size = iterationCount + 1;
 
-    char * other;
-    if (strcmp(current, p->start->name) == 0) other = p->end->name;
-    if (strcmp(current, p->end->name) == 0) other = p->start->name;
+    Node * other;
+    if(current->id == link->start->id) other = link->end;
+    if(current->id == link->end->id) other = link->start;
 
-    for (int i = 0; i < nodesSize; i++)
-    {
-      if (strcmp(nodes[i], other) == 0)
-      {
-        currentIndex = i;
-      }
-    }
     current = other;
+
     iterationCount++;
   }
 
@@ -515,7 +447,7 @@ void findShortestPath(Links * links, Links * path, char * node1, char * node2)
 }
 
 
-void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, u32 maxNumberOfLinks, int depth, u32 startingPoint)
+void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, Nodes * nodes, int depth, u32 startingPoint)
 {
   for (u32 i = startingPoint; i < links->size; i++)
   {
@@ -528,7 +460,7 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, u32 m
 
     link->isActive = false;
 
-    if (depth > 0) recursiveWorstCaseFailure(links, trafficLinks, maxNumberOfLinks, depth - 1, i + 1);
+    if (depth > 0) recursiveWorstCaseFailure(links, trafficLinks, nodes, depth - 1, i + 1);
 
     if (depth == 0)
     {
@@ -538,23 +470,23 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, u32 m
         links->values[j]->load = 0;
         if (!links->values[j]->isActive)
         {
-          fprintf(stdout, "%s -> %s\n", links->values[j]->start, links->values[j]->end);
+          fprintf(stdout, "%s -> %s\n", links->values[j]->start->name, links->values[j]->end->name);
         }
       }
 
       for (int i = 0; i < trafficLinks->size; i++)
       {
-        Link ** pathValues = (Link **)malloc(maxNumberOfLinks * sizeof(Link **));
+        Link ** pathValues = (Link **)malloc(MAX_NODES * sizeof(Link **));
         Links * path = (Links *)malloc(sizeof(pathValues) + sizeof(u32));
         path->values = pathValues;
 
         TrafficLink * trafficLink = trafficLinks->values[i];
-        char * source = trafficLink->source;
-        char * destination = trafficLink->destination;
+        char * source = trafficLink->source->name;
+        char * destination = trafficLink->destination->name;
         fprintf(stdout, "\n### Route\n%s --> %s\n", source, destination);
         u32 demand = trafficLink->demand;
 
-        findShortestPath(links, path, source, destination);
+        findShortestPath(links, path, nodes, trafficLink->source, trafficLink->destination);
 
         if (path->size > 0)
         {
@@ -583,7 +515,7 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, u32 m
       for (int i = 0; i < links->size; i++)
       {
         Link * link = links->values[i];
-        fprintf(stdout, "%s -> %s, %u/%u, (%.2f%%)\n", link->start, link->end, link->load, link->capacity, ((double)link->load / (double)link->capacity * 100));
+        fprintf(stdout, "%s -> %s, %u/%u, (%.2f%%)\n", link->start->name, link->end->name, link->load, link->capacity, ((double)link->load / (double)link->capacity * 100));
       }
     }
 
@@ -611,11 +543,15 @@ int RunGUI()
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
 
 
-    Link ** values = (Link **)malloc(maxNumberOfLinks * sizeof(Link *));
-    Links * links = (Links *)malloc(sizeof(values) + sizeof(u32));
-    links->values = values;
+    Node ** nodeValues = (Node **)malloc(MAX_NODES * sizeof(Node *))
+    Nodes * nodes = (Nodes *)malloc(sizeof(nodeValues) + sizeof(u32));
+    nodes->values = nodeValues;
 
-    TrafficLink ** trafficValues = (TrafficLink **)malloc(maxNumberOfLinks * sizeof(TrafficLink *));
+    Link ** linkValues = (Link **)malloc(MAX_LINKS * sizeof(Link *));
+    Links * links = (Links *)malloc(sizeof(linkValues) + sizeof(u32));
+    links->values = linkValues;
+
+    TrafficLink ** trafficValues = (TrafficLink **)malloc(MAX_LINKS * sizeof(TrafficLink *));
     TrafficLinks * trafficLinks = (TrafficLinks *)malloc(sizeof(trafficValues) + sizeof(u32));
     trafficLinks->values = trafficValues;
 
@@ -641,7 +577,7 @@ int RunGUI()
                             perror("Error opening network file");
                             return EXIT_FAILURE;
                         }
-                        int parseNetworkCSVError = ParseNetworkCSV(links, networkFile);
+                        int parseNetworkCSVError = ParseNetworkCSV(links, nodes, networkFile);
                     } else if (strstr(droppedFiles.paths[i], "traffic.csv")) {
                       trafficFile = fopen(droppedFiles.paths[i], "r");
                       if (trafficFile == NULL) {
@@ -649,7 +585,7 @@ int RunGUI()
                           fclose(networkFile);
                           return EXIT_FAILURE;
                       }
-                        int parseTrafficCSVError = ParseTrafficCSV(trafficLinks, trafficFile);
+                        int parseTrafficCSVError = ParseTrafficCSV(trafficLinks, nodes, trafficFile);
                     }
                 }
             }
@@ -780,51 +716,58 @@ int main(int argc, char ** args)
       return EXIT_FAILURE;
   }
 
-  // todo: determine this programmatically from the files
+  // initialize
+  Node ** nodeValues = (Node **)malloc(MAX_NODES * sizeof(Node *));
+  Nodes * nodes = (Nodes *)malloc(sizeof(nodeValues) + sizeof(u32));
+  nodes->values = nodeValues;
 
-  Link ** values = (Link **)malloc(maxNumberOfLinks * sizeof(Link *));
-  Links * links = (Links *)malloc(sizeof(values) + sizeof(u32));
-  links->values = values;
+  Link ** linkValues = (Link **)malloc(MAX_LINKS * sizeof(Link *));
+  Links * links = (Links *)malloc(sizeof(linkValues) + sizeof(u32));
+  links->values = linkValues;
 
-  int parseNetworkCSVError = ParseNetworkCSV(links, networkFile);
-  if (parseNetworkCSVError) return parseNetworkCSVError;
-
-  TrafficLink ** trafficValues = (TrafficLink **)malloc(maxNumberOfLinks * sizeof(TrafficLink *));
+  TrafficLink ** trafficValues = (TrafficLink **)malloc(MAX_LINKS * sizeof(TrafficLink *));
   TrafficLinks * trafficLinks = (TrafficLinks *)malloc(sizeof(trafficValues) + sizeof(u32));
   trafficLinks->values = trafficValues;
 
-  int parseTrafficCSVError = ParseTrafficCSV(trafficLinks, trafficFile);
+
+
+  // parse
+  int parseNetworkCSVError = ParseNetworkCSV(links, nodes, networkFile);
+  if (parseNetworkCSVError) return parseNetworkCSVError;
+
+  int parseTrafficCSVError = ParseTrafficCSV(trafficLinks, nodes, trafficFile);
   if (parseTrafficCSVError) return parseTrafficCSVError;
+
 
   if (trafficLinks->size > 0)
   {
     fprintf(stdout, "## Determining Traffic\n");
     for (int i = 0; i < trafficLinks->size; i++)
       {
-        Link ** pathValues = (Link **)malloc(maxNumberOfLinks * sizeof(Link **));
+        Link ** pathValues = (Link **)malloc(MAX_NODES * sizeof(Link *));
         Links * path = (Links *)malloc(sizeof(pathValues) + sizeof(u32));
         path->values = pathValues;
 
         TrafficLink * trafficLink = trafficLinks->values[i];
-        char * source = trafficLink->source;
-        char * destination = trafficLink->destination;
-        fprintf(stdout, "\n\n### Route\n%s --> %s\n\n", source, destination);
-        u32 demand = trafficLink->demand;
+        Node * source = trafficLink->source;
+        Node * destination = trafficLink->destination;
+        fprintf(stdout, "\n\n### Route\n%s --> %s\n\n", source->name, destination->name);
 
-        findShortestPath(links, path, source, destination);
+        findShortestPath(links, path, nodes, trafficLink->source, trafficLink->destination);
 
         if (path->size > 0)
         {
           fprintf(stdout, "Link, Demand/Capacity, Percentage\n");
-          char * first = source;
+          Node * first = source;
           for (int j = 0; j < path->size; j++)
           {
             Link * link = path->values[j];
-            char * other = NULL;
-            if (strcmp(first, link->start->name) == 0) other = link->end->name;
-            if (strcmp(first, link->end->name) == 0) other = link->start->name;
+            Node * other = NULL;
+            if (first->id == link->start->id) other = link->end;
+            if (first->id == link->end->id) other = link->start;
+            u32 demand = trafficLink->demand;
             u32 capacity = link->capacity;
-            fprintf(stdout, "%s -> %s, %u/%u, %.2f%%\n", first, other, demand, capacity, ((double)demand / (double)capacity * 100));
+            fprintf(stdout, "%s -> %s, %u/%u, %.2f%%\n", first->name, other->name, demand, capacity, ((double)demand / (double)capacity * 100));
             first = other;
 
             link->load += demand;
@@ -839,14 +782,14 @@ int main(int argc, char ** args)
     for (int i = 0; i < links->size; i++)
     {
       Link * link = links->values[i];
-      fprintf(stdout, "%s -> %s, %u/%u, (%.2f%%)\n", link->start, link->end, link->load, link->capacity, ((double)link->load / (double)link->capacity * 100));
+      fprintf(stdout, "%s -> %s, %u/%u, (%.2f%%)\n", link->start->name, link->end->name, link->load, link->capacity, ((double)link->load / (double)link->capacity * 100));
     }
   }
 
   if (simulateNumberOfLinksToKill > 0)
   {
     fprintf(stdout, "\n\n\n### Simulating Network Failure\n");
-    recursiveWorstCaseFailure(links, trafficLinks, maxNumberOfLinks, simulateNumberOfLinksToKill - 1, 0);
+    recursiveWorstCaseFailure(links, trafficLinks, nodes, simulateNumberOfLinksToKill - 1, 0);
   }
 
   return 0;

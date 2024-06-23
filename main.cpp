@@ -10,6 +10,9 @@
 
 #ifdef GUI
 #include "raylib.h"
+#include "raymath.h"
+#include <time.h>
+#include <math.h>
 #endif
 
 typedef uint32_t u32;
@@ -18,6 +21,16 @@ typedef uint32_t u32;
 #define MAX_LINKS MAX_NODES * MAX_NODES
 #define MAX_NODE_NAME_LENGTH 10
 #define MAX_LINE_LENGTH 1024
+
+#ifdef GUI
+#define SCREEN_WIDTH 2400
+#define SCREEN_HEIGHT 1800
+
+#define REPULSION_CONSTANT 1000.0f
+#define SPRING_CONSTANT 0.1f
+#define MAX_ITERATIONS 1000
+#endif
+
 typedef struct Node {
     unsigned int id;
     char name[MAX_NODE_NAME_LENGTH];
@@ -31,6 +44,9 @@ typedef struct Node {
     
     // gui specific fields
     float x, y;
+
+    Vector2 position;
+    Vector2 velocity;
 } Node;
 
 typedef struct Nodes {
@@ -225,6 +241,7 @@ int createNodeFromToken(Node ** p, Nodes * nodes, char * token)
   node->shortestPath = NULL;
 
   int err = insertNode(nodes, node);
+
   if (err)
   {
     free(node);
@@ -524,6 +541,78 @@ void recursiveWorstCaseFailure(Links * links, TrafficLinks * trafficLinks, Nodes
 }
 
 #ifdef GUI
+
+float CalculateNodeRadius(int screenWidth, int screenHeight) {
+    return fminf(screenWidth, screenHeight) * 0.02f; // Example: 2% of the smaller window dimension
+}
+
+float CalculateLinkLength(int screenWidth, int screenHeight) {
+    return fminf(screenWidth, screenHeight) * 0.1f; // Example: 10% of the smaller window dimension
+}
+
+void ApplyRepulsiveForces(Nodes *nodes, float nodeRadius) {
+    for (int i = 0; i < nodes->size; i++) {
+        for (int j = 0; j < nodes->size; j++) {
+            if (i != j) {
+                // Vector2 v1 = nodes->values[i]->position;
+                // Vector2 v2 = nodes->values[j]->position;
+                // Vector2 delta = { v1.x - v2.x, v1.y - v2.y };
+                Vector2 delta = Vector2Subtract(nodes->values[i]->position, nodes->values[j]->position);
+                float distance = Vector2Length(delta) - 2 * nodeRadius;
+                if (distance == 0) distance = 0.01f; // Avoid division by zero
+                float forceMagnitude = REPULSION_CONSTANT / (distance * distance);
+                Vector2 force = Vector2Scale(Vector2Normalize(delta), forceMagnitude);
+                nodes->values[i]->velocity = Vector2Add(nodes->values[i]->velocity, force);
+            }
+        }
+    }
+}
+
+void ApplyAttractiveForces(Links *links, float nodeRadius, float linkLength) {
+    for (int i = 0; i < links->size; i++) {
+        Vector2 delta = Vector2Subtract(links->values[i]->start->position, links->values[i]->end->position);
+        float distance = Vector2Length(delta) - 2 * nodeRadius;
+        if (distance == 0) distance = 0.01f; // Avoid division by zero
+        float forceMagnitude = SPRING_CONSTANT * (distance - linkLength);
+        Vector2 force = Vector2Scale(Vector2Normalize(delta), forceMagnitude);
+        links->values[i]->start->velocity = Vector2Subtract(links->values[i]->start->velocity, force);
+        links->values[i]->end->velocity = Vector2Add(links->values[i]->end->velocity, force);
+    }
+}
+
+void UpdatePositions(Nodes *nodes) {
+    for (int i = 0; i < nodes->size; i++) {
+        nodes->values[i]->position = Vector2Add(nodes->values[i]->position, nodes->values[i]->velocity);
+        nodes->values[i]->velocity = Vector2Scale(nodes->values[i]->velocity, 0.5f); // Damping factor
+    }
+}
+
+void CalculateNodePositions(Nodes *nodes, Links *links, float nodeRadius, float linkLength) {
+    // Initialize node positions randomly
+    // for (int i = 0; i < nodes->size; i++) {
+    //     nodes->values[i]->position = (Vector2){ (float)GetRandomValue(0, 2400), (float)GetRandomValue(0, 1800) };
+    //     nodes->values[i]->velocity = (Vector2){ 0.0f, 0.0f };
+    // }
+    for (int iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+        ApplyRepulsiveForces(nodes, nodeRadius);
+        ApplyAttractiveForces(links, nodeRadius, linkLength);
+        UpdatePositions(nodes);
+    }
+}
+
+void DrawGraph(Nodes *nodes, Links *links, float nodeRadius) {
+    for (int i = 0; i < links->size; i++) {
+        Vector2 from = links->values[i]->start->position;
+        Vector2 to = links->values[i]->end->position;
+        DrawLineV(from, to, DARKGRAY);
+    }
+
+    for (int i = 0; i < nodes->size; i++) {
+        DrawCircleV(nodes->values[i]->position, nodeRadius, LIGHTGRAY);
+        DrawText(nodes->values[i]->name, nodes->values[i]->position.x - 20, nodes->values[i]->position.y - 10, 50, BLACK);
+    }
+}
+
 int RunGUI()
 {
 
@@ -534,16 +623,17 @@ int RunGUI()
     // Set the window to be resizable and support drag-and-drop
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_ALWAYS_RUN);
 
-    const int screenWidth = 2400;
-    const int screenHeight = 1800;
-
+    int screenWidth = 2400;
+    int screenHeight = 1800;
+    int screenChangeValue = 0;
 
     InitWindow(screenWidth, screenHeight, "raylib [core] example - basic window");
 
     SetTargetFPS(60); // Set our game to run at 60 frames-per-second
 
 
-    Node ** nodeValues = (Node **)malloc(MAX_NODES * sizeof(Node *))
+    // initialize
+    Node ** nodeValues = (Node **)malloc(MAX_NODES * sizeof(Node *));
     Nodes * nodes = (Nodes *)malloc(sizeof(nodeValues) + sizeof(u32));
     nodes->values = nodeValues;
 
@@ -562,6 +652,9 @@ int RunGUI()
     {
         // Update
         //----------------------------------------------------------------------------------
+        screenWidth = GetScreenWidth();
+        screenHeight = GetScreenHeight();
+
         int count = 0;
         FilePathList droppedFiles = LoadDroppedFiles();
         count = droppedFiles.count;
@@ -592,25 +685,37 @@ int RunGUI()
             UnloadDroppedFiles(droppedFiles);
         }
 
+
+        // int numColumns = 10;  // Define how many columns you want
+        // int numRows = (nodes->size + numColumns - 1) / numColumns;  // Calculate the number of rows needed
+
+        // // Calculate the spacing between nodes
+        // int xSpacing = screenWidth / numColumns;
+        // int ySpacing = screenHeight / (numRows > 0 ? numRows : 1); // Prevent division by zero
+
+
         // Draw
         //----------------------------------------------------------------------------------
+
         BeginDrawing();
 
         ClearBackground(RAYWHITE);
 
-        // Draw links
-        // for (int i = 0; i < links->size; i++) {
-        //   int startNodeIndex = FindOrCreateNode(links[i]->start);
-        //   int endNodeIndex = FindOrCreateNode(links->values[i]->end);
-        //   DrawLineV((Vector2){nodes[startNodeIndex].x, nodes[startNodeIndex].y}, 
-        //             (Vector2){nodes[endNodeIndex].x, nodes[endNodeIndex].y}, BLACK);
-        // }
+        float nodeRadius = CalculateNodeRadius(screenWidth, screenHeight);
+        float linkLength = CalculateLinkLength(screenWidth, screenHeight);
 
-        // // Draw nodes
-        // for (int i = 0; i < nodeCount; i++) {
-        //   DrawCircleV((Vector2){nodes[i].x, nodes[i].y}, 5, RED);
-        //   DrawText(nodes[i].id, nodes[i].x + 10, nodes[i].y, 10, DARKGRAY);
-        // }
+        if (screenChangeValue != screenWidth + screenHeight && nodes->size > 0)
+        {
+          for (int i = 0; i < nodes->size; i++) {
+              nodes->values[i]->position = (Vector2){ (float)GetRandomValue(0, screenWidth), (float)GetRandomValue(0, screenHeight) };
+              nodes->values[i]->velocity = (Vector2){ 0.0f, 0.0f };
+          }
+          screenChangeValue = screenWidth + screenHeight;
+        }
+
+        CalculateNodePositions(nodes, links, nodeRadius, linkLength);
+
+        DrawGraph(nodes, links, nodeRadius);
 
         // // Draw traffic demands
         // for (int i = 0; i < trafficCount; i++) {
